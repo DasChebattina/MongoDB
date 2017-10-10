@@ -1,0 +1,101 @@
+# whitelist
+ 
+branches:
+ 
+only:
+ 
+- master
+ 
+sudo: required
+ 
+services:
+ 
+- docker
+ 
+language: python
+ 
+before_install:
+ 
+- pip install awscli --upgrade
+ 
+#Set up Docker exports
+ 
+- export AUTHOR=`git --no-pager show -s --format='%an <%ae>'`
+ 
+- export DATE=`TZ=America/New_York date "+%m-%d-%y-%H%M"`
+ 
+- echo "TravisBuild=$TRAVIS_BUILD_NUMBER" > build_number.html &&
+ 
+echo "Commit=$TRAVIS_COMMIT" >> build_number.html &&
+ 
+echo "TravisBuildID=$TRAVIS_BUILD_ID" >> build_number.html &&
+ 
+echo "Author=$AUTHOR" >> build_number.html &&
+ 
+echo "BuildTime=$DATE" >> build_number.html &&
+ 
+echo "Docker=$DOCKER_IMAGE:$DATE" >> build_number.html
+ 
+- cat ./build_number.html
+ 
+- aws s3 ls s3://$BUCKET_NAME/ 
+ 
+- echo $DATE
+ 
+script:
+ 
+- |
+ 
+for repo in `cat repos.txt`;do
+ 
+echo $repo
+ 
+git clone --mirror $GIT_BASE_URL/$repo ./$repo.git
+ 
+tar cpzf ./$repo.git.$DATE.tar.gz ./$repo.git
+ 
+aws s3 mv $repo.git.$DATE.tar.gz s3://$BUCKET_NAME/GitRepos/$repo/ --sse=AES256
+ 
+done
+ 
+ 
+ 
+# - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+ 
+ 
+ 
+- | 
+ 
+for dname in `cat dockerlist.txt`;do
+ 
+image=`aws ecs describe-task-definition --task-definition $dname --region us-east-1 --output text|grep CONTAINER|awk '{print $4}'`
+ 
+echo $image
+ 
+docker pull $image
+ 
+echo $dname
+ 
+docker save $image | gzip > $dname.$DATE.tgz
+ 
+aws s3 mv $dname.$DATE.tgz s3://$BUCKET_NAME/DockerImages/$dname/ --sse=AES256
+ 
+done 
+ 
+ 
+ 
+- |
+ 
+for taskdef in `cat dockerlist.txt`;do
+ 
+aws ecs describe-task-definition --task-definition $taskdef --region us-east-1 --output table > ./$taskdef.$DATE.td
+ 
+aws s3 mv $taskdef.$DATE.td s3://$BUCKET_NAME/TaskConfigImages/$taskdef/ --sse=AES256
+ 
+done 
+ 
+ 
+ 
+#after_failure:
+ 
+#after_success:
